@@ -9,12 +9,13 @@ const multer = require('multer')
 const low = require('lowdb')
 const FileSync = require('lowdb/adapters/FileSync')
 
-const upload = multer({
+const multerOptions = {
   dest: 'uploads/', 
   limits: {
     fileSize: 140 * 1024 * 1024
   }
-})
+}
+const upload = multer(multerOptions)
 
 const adapter = new FileSync('db.json')
 const db = low(adapter)
@@ -148,11 +149,14 @@ function afterDownload(file) {
 }
 function remove(file) {
   try {
-    db.get('files')
-      .remove(file)
-      .write()
+    const files = db.get('files')
+    if (files.some(f => f.filename === file.filename)) {
+      files
+        .remove(file)
+        .write()
+    }
 
-      fs.unlinkSync(file.path)
+    fs.unlinkSync(file.path)
   } catch(e) {
     console.log(e, ' in remove()')
   }
@@ -164,6 +168,17 @@ setInterval(function () {
     .filter(file => file.expires < Date.now())
     .value()
     .map(remove)
+  fs.readdir(multerOptions.dest, function(err, files) {
+    if (err) return
+    files.forEach(filename => {
+      if (!db.get('files').some(file => file.filename === filename)) {
+        remove({
+          filename: filename,
+          path: multerOptions.dest + filename
+        })
+      }
+    }
+  })
 }, 15 * 60 * 1000)
 
 app.listen(process.env.PORT || 3000);
