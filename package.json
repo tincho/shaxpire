@@ -1,11 +1,11 @@
 {
   "name": "shaxpire",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Pronounced: shake-spear",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js"
+    "start": "forever start --minUptime 1000 --spinSleepTime 1000 index.js"
   },
   "author": "Martin Salinas <martin.salinas@gmail.com>",
   "license": "MIT",
@@ -14,5 +14,8 @@
     "lowdb": "^1.0.0",
     "multer": "^1.4.2",
     "serve-static": "^1.14.1"
+  },
+  "devDependencies": {
+    "forever": "^2.0.0"
   }
 }

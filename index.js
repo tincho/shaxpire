@@ -27,8 +27,11 @@ app.use(serveStatic('public'));
 const host = process.env.HOST || 'http://localhost:3000'
 
 const oneDay = 24 * 60 * 60 * 1000
-// max quota per IP = 240Mb
-const maxQuota = 240 * 1024 * 1024
+// max quota per IP = 240Mb or 100 files (up to 240 Mb total)
+const maxQuota = {
+  size: 240 * 1024 * 1024,
+  count: 100
+}
 
 const uploadSingleFile = upload.single('file')
 
@@ -37,28 +40,30 @@ app.post('/upload', function (req, res) {
   const ipQuotaSelect = `quotas.byIp[${req.ip}]`
 
   const quota = db
-    .defaultsDeep(set({}, ipQuotaSelect, 0))
-    .get(ipQuotaSelec)
+    .defaultsDeep(set({}, ipQuotaSelect, { size: 0, count: 0 }))
+    .get(ipQuotaSelect)
     .value()
 
-  if (quota >= maxQuota) return res.status(507).send()
+  if (quota.size >= maxQuota.size) return res.status(507).send()
+  if (quota.count >= maxQuota.count) return res.status(507).send()
 
   uploadSingleFile(req, res, function(err) {
     if (err) return res.status(413).send()
 
     // here on: file's been uploaded.
 
-    const defaultFile = {
+    const defaultOptions = {
       accessCount: 0,
       accessLimit: 1,
       expires: Date.now() + oneDay
     }
   
-    const options = assign({}, defaultFile, pick(req.body, [
+    const options = assign({}, defaultOptions, pick(req.body, [
       'expires',
       'accessLimit',
       'password'
     ]))
+
     const fileInfo = pick(req.file, [
       'originalname',
       'filename',
@@ -67,7 +72,7 @@ app.post('/upload', function (req, res) {
       'mimetype'
     ])
   
-    const file = assign({}, options, fileInfo, {
+    const file = assign({}, fileInfo, options, {
       // max expiration 3 days
       expires: Math.min(
         options.expires,
@@ -82,13 +87,17 @@ app.post('/upload', function (req, res) {
 
     try {
       // update usage quota
-      db.set(ipQuotaSelect, quota + file.size)
-        .write()
-      
+      db.set(ipQuotaSelect, {
+        size: quota.size + file.size,
+        count: quota.count + 1
+      }).write()
+
+      // save file data in db
       db.get('files')
         .push(file)
         .write()
-        
+      
+      // respond access info
       const resBody = {
         link: `${host}/file/${file.filename}`,
         expires: new Date(file.expires).toISOString(),
@@ -96,7 +105,6 @@ app.post('/upload', function (req, res) {
       }
       res.send(resBody)
     } catch(e) {
-      console.log(e)
       res.status(418).send()
     }
   })
@@ -140,22 +148,25 @@ function afterDownload(file) {
   if (file.accessCount === file.accessLimit - 1) {
     // was the last download
     remove(file)
-  } else {
-    db.get('files')
-      .find(file)
-      .assign({ accessCount: file.accessCount + 1 })
-      .write()
-  }
+    return
+  } // else:
+
+  // update access count
+  db.get('files')
+    .find(file)
+    .assign({ accessCount: file.accessCount + 1 })
+    .write()
 }
 function remove(file) {
   try {
     const files = db.get('files')
+    // delete from db if present
     if (files.some(f => f.filename === file.filename)) {
       files
         .remove(file)
         .write()
     }
-
+    // delete file
     fs.unlinkSync(file.path)
   } catch(e) {
     console.log(e, ' in remove()')
@@ -177,7 +188,7 @@ setInterval(function () {
           path: multerOptions.dest + filename
         })
       }
-    }
+    })
   })
 }, 15 * 60 * 1000)
 
