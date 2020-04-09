@@ -108,47 +108,44 @@ app.get('/file/:id', function (req, res) {
     if (!file) {
       throw Error()
     }
-    if (file.expires < Date.now()) {
-      throw Error()
-    }
-    if (file.accessCount >= file.accessLimit) {
-      // this should never happen, anyway...
-      remove(file)
-      throw Error()
-    }
-    download(file)
+    check(file)
+    res.download(file.path, file.originalname, function (err) {
+      // this would prevent updating quota and delete if last allowed visit
+      // but what if the clients response is spoofed
+      // so the backend believes it wasnt downloaded because some error
+      // that could be a potential exploit 
+      // @TODO make sure express' res.download handles it
+      if (err) throw Error()
+      afterDownload(file)
+    })
   } catch (e) {
     res.status(418).send()
   }
-
-  function download(file) {
-    try {
-      res.download(file.path, file.originalname, function (err) {
-        if (err) {
-          return
-        }
-        afterDownload(file)
-      })
-    } catch (e) {
-      console.log(e, ' in download()')
-      throw e
-    }
-
-  }
-
-  function afterDownload(file) {
-    if (file.accessCount === file.accessLimit - 1) {
-      // was the last download
-      remove(file)
-    } else {
-      db.get('files')
-        .find(file)
-        .assign({ accessCount: file.accessCount + 1 })
-        .write()
-    }
-  }
 })
 
+
+function check(file) {
+  if (file.expires < Date.now()) {
+    throw Error()
+  }
+  if (file.accessCount >= file.accessLimit) {
+    // this should never happen, anyway...
+    remove(file)
+    throw Error()
+  }
+}
+
+function afterDownload(file) {
+  if (file.accessCount === file.accessLimit - 1) {
+    // was the last download
+    remove(file)
+  } else {
+    db.get('files')
+      .find(file)
+      .assign({ accessCount: file.accessCount + 1 })
+      .write()
+  }
+}
 function remove(file) {
   try {
     db.get('files')
