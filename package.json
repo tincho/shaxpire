@@ -1,13 +1,13 @@
 {
-  "name": "safeupload",
-  "version": "1.0.0",
-  "description": "",
+  "name": "shaxpire",
+  "version": "0.0.2",
+  "description": "Pronounced: shake-spear",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "Martin Salinas <martin.salinas@gmail.com>",
+  "license": "MIT",
   "dependencies": {
     "express": "^4.17.1",
     "lowdb": "^1.0.0",

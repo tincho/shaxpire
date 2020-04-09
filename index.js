@@ -24,7 +24,7 @@ db.defaults({ files: [], quotas: {} }).write()
 const app = express()
 app.use(serveStatic('public'));
 
-const host = 'http://localhost:3000'
+const host = process.env.HOST || 'http://localhost:3000'
 
 const oneDay = 24 * 60 * 60 * 1000
 // max quota per IP = 240Mb
