@@ -23,6 +23,7 @@ db.defaults({ files: [], quotas: {} }).write()
 
 const app = express()
 app.use(serveStatic('public'));
+app.set('trust proxy', true);
 
 const host = process.env.HOST || 'http://localhost:3000'
 
@@ -37,7 +38,7 @@ const uploadSingleFile = upload.single('file')
 
 app.post('/upload', function (req, res) {
 
-  const ipQuotaSelect = `quotas.byIp[${req.ip}]`
+  const ipQuotaSelect = `quotas.byIp["${req.ip}"]`
 
   const quota = db
     .defaultsDeep(set({}, ipQuotaSelect, { size: 0, count: 0 }))
@@ -99,7 +100,7 @@ app.post('/upload', function (req, res) {
       
       // respond access info
       const resBody = {
-        link: `${host}/file/${file.filename}`,
+        link: `${host}/file/${file.filename}/${file.originalname}`,
         expires: new Date(file.expires).toISOString(),
         accessLimit: file.accessLimit
       }
@@ -110,7 +111,7 @@ app.post('/upload', function (req, res) {
   })
 });
 
-app.get('/file/:id', function (req, res) {
+app.get('/file/:id/:originalname', function (req, res) {
   try {
     const id = req.params.id
     const file = db.get('files').find({ filename: id }).value()
@@ -118,7 +119,12 @@ app.get('/file/:id', function (req, res) {
       throw Error()
     }
     check(file)
-    res.download(file.path, file.originalname, function (err) {
+    // check() will throw exception if something is wrong
+    const data = fs.readFileSync(file.path)
+    res.contentType(file.mimetype)
+    res.end(data)
+    afterDownload(file)
+/*    res.download(file.path, file.originalname, function (err) {
       // this would prevent updating quota and delete if last allowed visit
       // but what if the clients response is spoofed
       // so the backend believes it wasnt downloaded because some error
@@ -126,7 +132,7 @@ app.get('/file/:id', function (req, res) {
       // @TODO make sure express' res.download handles it
       if (err) throw Error()
       afterDownload(file)
-    })
+    }) */
   } catch (e) {
     res.status(418).send()
   }
@@ -135,6 +141,7 @@ app.get('/file/:id', function (req, res) {
 
 function check(file) {
   if (file.expires < Date.now()) {
+    remove(file)
     throw Error()
   }
   if (file.accessCount >= file.accessLimit) {
@@ -175,19 +182,27 @@ function remove(file) {
 
 // if ... ?
 setInterval(function () {
+
   db.get('files')
     .filter(file => file.expires < Date.now())
     .value()
     .map(remove)
+
   fs.readdir(multerOptions.dest, function(err, files) {
     if (err) return
     files.forEach(filename => {
-      if (!db.get('files').some(file => file.filename === filename)) {
-        remove({
-          filename: filename,
-          path: multerOptions.dest + filename
-        })
+      const inDB = db
+        .get('files')
+        .find({ filename: filename })
+        .value()
+      if (inDB) {
+        return
       }
+      // remove files that are not in DB
+      remove({
+        filename: filename,
+        path: multerOptions.dest + filename
+      })
     })
   })
 }, 15 * 60 * 1000)

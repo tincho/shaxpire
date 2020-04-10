@@ -74,6 +74,7 @@ function onSubmit(evt) {
   formData.append('file', file)
   xhr.open(method, action);
   xhr.send(formData)
+  document.querySelector('button').disabled = true
 }
 </script>
 </body>
